@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -6,25 +6,161 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useTheme } from "./ThemeProvider";
-import { Bell, User, Palette } from "lucide-react";
+import { LoginModal } from "./auth/LoginModal";
+import { useAuth } from "../contexts/AuthContext";
+import { toast } from "../hooks/use-toast";
+import { Bell, User, Palette, Crown, Key, Trash2, LogOut } from "lucide-react";
 
 export function Settings() {
   const { theme, setTheme } = useTheme();
+  const { user, firebaseUser, logout, refreshUser } = useAuth();
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [settings, setSettings] = useState({
-    emailNotifications: true,
+    emailNotifications: user?.emailNotifications ?? true,
     pushNotifications: false,
     apiKeyVisible: false,
     autoDownload: true,
     defaultFormat: "mp4",
     defaultQuality: "720p"
   });
+  
+  const [formData, setFormData] = useState({
+    displayName: user?.displayName || "",
+    username: user?.username || "",
+    profilePhoto: user?.profilePhoto || "",
+  });
+  
+  const isLoggedIn = !!user;
+  
+  // Update form data when user changes
+  React.useEffect(() => {
+    if (user) {
+      setFormData({
+        displayName: user.displayName,
+        username: user.username,
+        profilePhoto: user.profilePhoto,
+      });
+      setSettings(prev => ({
+        ...prev,
+        emailNotifications: user.emailNotifications,
+      }));
+    }
+  }, [user]);
 
   const handleSettingChange = (key: string, value: any) => {
     setSettings(prev => ({
       ...prev,
       [key]: value
     }));
+  };
+
+  const handleSaveProfile = async () => {
+    if (!user || !firebaseUser) return;
+    
+    try {
+      setIsLoading(true);
+      const token = await firebaseUser.getIdToken();
+      
+      const response = await fetch('/api/auth/profile', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          displayName: formData.displayName,
+          username: formData.username,
+          profilePhoto: formData.profilePhoto,
+          emailNotifications: settings.emailNotifications,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to update profile');
+      }
+
+      await refreshUser();
+      toast({ title: 'Success', description: 'Profile updated successfully' });
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRegenerateApiKey = async () => {
+    if (!user || !firebaseUser) return;
+
+    try {
+      setIsLoading(true);
+      const token = await firebaseUser.getIdToken();
+
+      const response = await fetch('/api/auth/regenerate-api-key', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to regenerate API key');
+      }
+
+      const data = await response.json();
+      await refreshUser();
+      
+      // Copy to clipboard
+      navigator.clipboard.writeText(data.apiKey);
+      toast({ 
+        title: 'Success', 
+        description: 'New API key generated and copied to clipboard' 
+      });
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!user || !firebaseUser) return;
+
+    try {
+      setIsLoading(true);
+      const token = await firebaseUser.getIdToken();
+
+      const response = await fetch('/api/auth/account', {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to delete account');
+      }
+
+      toast({ title: 'Success', description: 'Account deleted successfully' });
+      await logout();
+    } catch (error: any) {
+      toast({ title: 'Error', description: error.message, variant: 'destructive' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const canRegenerateApiKey = () => {
+    if (!user?.lastApiKeyRegeneration) return true;
+    const oneWeek = 7 * 24 * 60 * 60 * 1000;
+    return (Date.now() - user.lastApiKeyRegeneration) >= oneWeek;
   };
 
   return (
@@ -50,6 +186,9 @@ export function Settings() {
                 <Input
                   id="displayName"
                   placeholder="Your display name"
+                  value={formData.displayName}
+                  onChange={(e) => setFormData({...formData, displayName: e.target.value})}
+                  disabled={!isLoggedIn}
                   data-testid="input-display-name"
                 />
               </div>
@@ -61,7 +200,7 @@ export function Settings() {
                   type="email"
                   placeholder="your@email.com"
                   disabled
-                  value="user@example.com"
+                  value={isLoggedIn ? user.email : "Please log in"}
                   data-testid="input-email"
                 />
                 <p className="text-xs text-muted-foreground mt-1">
@@ -141,8 +280,9 @@ export function Settings() {
                 <div className="flex gap-2">
                   <Input
                     type={settings.apiKeyVisible ? "text" : "password"}
-                    value="sk-1234567890abcdef"
+                    value={isLoggedIn ? user.apiKey : "Please log in to view API key"}
                     readOnly
+                    disabled={!isLoggedIn}
                     data-testid="input-api-key"
                   />
                   <Button
@@ -158,9 +298,46 @@ export function Settings() {
                 </p>
               </div>
 
-              <Button variant="outline" className="w-full" data-testid="button-regenerate-key">
+              <Button 
+                variant="outline" 
+                className="w-full" 
+                onClick={handleRegenerateApiKey}
+                disabled={!isLoggedIn || isLoading || !canRegenerateApiKey()}
+                data-testid="button-regenerate-key"
+              >
+                <Key className="w-4 h-4 mr-2" />
                 Regenerate API Key
               </Button>
+              
+              {isLoggedIn && (
+                <div className="pt-4 border-t">
+                  <div className="flex items-center justify-between mb-2">
+                    <Label>Account Tier</Label>
+                    <Badge variant={user.tier === 'premium' ? 'default' : 'secondary'}>
+                      {user.tier === 'premium' ? (
+                        <>
+                          <Crown className="w-3 h-3 mr-1" />
+                          Premium
+                        </>
+                      ) : (
+                        'Free'
+                      )}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    {user.tier === 'premium'
+                      ? 'Unlimited API requests'
+                      : `${300 - user.requestsThisWeek} requests remaining this week`
+                    }
+                  </p>
+                  {user.tier === 'free' && (
+                    <Button variant="outline" className="w-full">
+                      <Crown className="w-4 h-4 mr-2" />
+                      Upgrade to Premium
+                    </Button>
+                  )}
+                </div>
+              )}
             </div>
           </Card>
 
@@ -173,14 +350,74 @@ export function Settings() {
                 <p className="text-xs text-muted-foreground mb-3">
                   Permanently delete your account and all associated data
                 </p>
-                <Button variant="destructive" data-testid="button-delete-account">
-                  Delete Account
-                </Button>
+                {isLoggedIn ? (
+                  <>
+                    <Button 
+                      variant="outline" 
+                      className="w-full mb-2"
+                      onClick={logout}
+                      disabled={isLoading}
+                    >
+                      <LogOut className="w-4 h-4 mr-2" />
+                      Sign Out
+                    </Button>
+                    <Button 
+                      onClick={handleSaveProfile}
+                      disabled={isLoading}
+                      className="w-full mb-2"
+                    >
+                      Save Changes
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive" className="w-full" data-testid="button-delete-account">
+                          <Trash2 className="w-4 h-4 mr-2" />
+                          Delete Account
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            This action cannot be undone. This will permanently delete your account
+                            and remove all your data from our servers.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction 
+                            onClick={handleDeleteAccount}
+                            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                          >
+                            Yes, delete my account
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </>
+                ) : (
+                  <Button 
+                    onClick={() => setIsLoginModalOpen(true)} 
+                    className="w-full"
+                    data-testid="button-login"
+                  >
+                    Sign In to Access Account Settings
+                  </Button>
+                )}
               </div>
             </div>
           </Card>
         </div>
       </div>
+      
+      <LoginModal 
+        isOpen={isLoginModalOpen} 
+        onClose={() => setIsLoginModalOpen(false)}
+        onSuccess={() => {
+          setIsLoginModalOpen(false);
+          refreshUser();
+        }}
+      />
     </div>
   );
 }

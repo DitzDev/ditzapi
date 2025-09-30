@@ -1,0 +1,20 @@
+{
+  "users": [
+    {
+      "id": "1b3149ef-4726-4b95-ba72-9634a82ff8f9",
+      "username": "DitzDev",
+      "displayName": "DitzDev",
+      "email": "dawaifajar3@gmail.com",
+      "profilePhoto": "https://ui-avatars.com/api/?name=DitzDev&background=random",
+      "tier": "free",
+      "apiKey": "dk_ee9uysho7_mg4q8hck",
+      "apiKeyGeneratedAt": 1759126057937,
+      "requestsThisWeek": 0,
+      "requestsResetAt": 1759730857937,
+      "emailNotifications": true,
+      "createdAt": 1759126057937,
+      "password": "$2b$10$eaU8qOjJrlDeqUNX8fsD9OkUF/Pq0RSYzFKRDUxL0YGl7/D4gYpU."
+    }
+  ],
+  "otpVerifications": []
+}
